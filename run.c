@@ -2,7 +2,6 @@
 #include<stdio.h>
 #include "./pipe.h"
 
-
 int main(int argc, char* argv[]){
     //Parse args
     if(argc != 3){

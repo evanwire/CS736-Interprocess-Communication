@@ -3,6 +3,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <string.h>
+#include <sys/wait.h>
+
 
 #include "./include.h"
 
@@ -73,20 +76,23 @@ void run_experiment__p(int count, int size){
     }
 
     // Init measurements
-    Measurements* m;
+    Measurements* m = malloc(sizeof(Measurements));
+    init_measurements(m);
 
     pid_t pid;
-    if((pid == fork()) == -1){
+    if((pid = fork()) == -1){
         perror("Fork");
     }
 
     // Parent is server, child is client
     if(pid != 0){
         server(client_send, server_send, count, size, m);
-        wait(NULL);
+        waitpid(pid, NULL, 0);
     }else{
         client(server_send, client_send, count, size, m);
+        exit(0);
     }
 
     log_results(m, count, size);
+    free(m);
 }

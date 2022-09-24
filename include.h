@@ -5,7 +5,8 @@ typedef struct Measurements{
     unsigned long long start;
     unsigned long long minimum;
     unsigned long long maximum;
-    unsigned long long total;
+    unsigned long long total_t;
+    unsigned long long total_sent;
 } Measurements;
 
 unsigned long long get_now();
