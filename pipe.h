@@ -1,5 +1,5 @@
-#ifndef PIPE
-#define PIPE
+#ifndef PIPE_H
+#define PIPE_H
 
 void run_experiment__p(int, int);
 

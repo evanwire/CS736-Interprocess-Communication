@@ -11,7 +11,7 @@
 
 
 // client hears from server, writes same message back
-void client(int s[2], int r[2], int count, int size, Measurements* m){
+void client_p(int s[2], int r[2], int count, int size, Measurements* m){
     //close unnessary fd's
     close(s[0]);
     close(r[1]);
@@ -33,7 +33,7 @@ void client(int s[2], int r[2], int count, int size, Measurements* m){
 }
 
 // Server sends msg to client, client sends an ack
-void server(int s[2], int r[2], int count, int size, Measurements* m){
+void server_p(int s[2], int r[2], int count, int size, Measurements* m){
     // Close unnesesary fd's
     close(s[0]);
     close(r[1]);
@@ -86,10 +86,10 @@ void run_experiment__p(int count, int size){
 
     // Parent is server, child is client
     if(pid != 0){
-        server(client_send, server_send, count, size, m);
+        server_p(client_send, server_send, count, size, m);
         waitpid(pid, NULL, 0);
     }else{
-        client(server_send, client_send, count, size, m);
+        client_p(server_send, client_send, count, size, m);
         exit(0);
     }
 

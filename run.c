@@ -1,6 +1,7 @@
 #include<stdlib.h>
 #include<stdio.h>
 #include "./pipe.h"
+#include "./socket.h"
 
 int main(int argc, char* argv[]){
     //Parse args
@@ -17,7 +18,9 @@ int main(int argc, char* argv[]){
         exit(1);
     }
 
+
     // Run each experiment with these params
+    run_experiment__s(count, size);
     run_experiment__p(count, size);
 
 }
