@@ -18,6 +18,7 @@ void init_measurements(Measurements* m){
     m->maximum = 0;
     m->start = get_now();
     m->total_sent = 0;
+    m->total_t = 0;
 }
 
 // Records necessary measurements, called after a successful transmit
@@ -39,7 +40,7 @@ void record(Measurements* m){
 // TODO: Standard deviation of message send times
 // TODO: Do we want send rate? (size * bytes) / second?
 void log_results(Measurements* m, int count, int size){
-    double tp = (count * size) / (m->total_t / 1e6); // Milliseconds
+    double tp = ((double)count * size) / (m->total_t / 1e6); // Milliseconds
     double avg_latency = (m->minimum + m->maximum) / 4; //divide by 2 for average, and 2 for latency which is 1/2 rtt
 
     printf("Results: \n");

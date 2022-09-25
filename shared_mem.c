@@ -46,13 +46,15 @@ void run_secondary(int count, int size, int fd_prim_to_sec, int fd_sec_to_prim, 
     SharedMemoryMap memoryMap = memory_map_sm_file_descriptors(fd_prim_to_sec, fd_sec_to_prim, sm_size);
     char *sm_prim_to_sec = memoryMap.prim_to_sec;
     char *sm_sec_to_prim = memoryMap.sec_to_prim;
+    char *buffer = malloc(sm_size);
+    off_t last_idx = sm_size - 1;
 
-    char* buffer = malloc(size * sizeof(char));
     for (int itr = 1; itr <= count; itr++) {
-        while (sm_prim_to_sec[0] != '0' + itr) {} // Waiting for primary to write
+        while (sm_prim_to_sec[last_idx] != '0' + itr) {} // Waiting for primary to write
         memcpy(buffer, sm_prim_to_sec, sm_size);
         memset(sm_sec_to_prim, '0' + itr, size);
     }
+
     munmap(sm_prim_to_sec, sm_size);
     munmap(sm_sec_to_prim, sm_size);
     free(buffer);
@@ -62,16 +64,19 @@ Measurements *run_primary(int count, int size, int fd_prim_to_sec, int fd_sec_to
     SharedMemoryMap memoryMap = memory_map_sm_file_descriptors(fd_prim_to_sec, fd_sec_to_prim, sm_size);
     char *sm_prim_to_sec = memoryMap.prim_to_sec;
     char *sm_sec_to_prim = memoryMap.sec_to_prim;
-    char* buffer = malloc(size * sizeof(char));
+    char *buffer = malloc(sm_size);
+    off_t last_idx = sm_size - 1;
 
     Measurements *measurements = malloc(sizeof(Measurements));
     init_measurements(measurements);
+
     for (int itr = 1; itr <= count; itr++) {
         memset(sm_prim_to_sec, '0' + itr, size);
-        while (sm_sec_to_prim[0] != '0' + itr) {} // Waiting for secondary to write
+        while (sm_sec_to_prim[last_idx] != '0' + itr) {} // Waiting for secondary to write
         memcpy(buffer, sm_sec_to_prim, sm_size);
         record(measurements);
     }
+
     munmap(sm_prim_to_sec, sm_size);
     munmap(sm_sec_to_prim, sm_size);
     free(buffer);
