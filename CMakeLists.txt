@@ -7,10 +7,10 @@ add_library(pipe pipe.c)
 target_link_libraries(pipe include)
 
 add_library(socket socket.c)
-target_link_libraries(socket include pipe)
+target_link_libraries(socket include)
 
 add_library(shared_mem shared_mem.c)
-target_link_libraries(shared_mem include pipe)
+target_link_libraries(shared_mem include)
 
 add_executable(run run.c)
 target_link_libraries(run include pipe socket shared_mem)
