@@ -58,22 +58,67 @@ void do_close(int fd) {
 
 void usage() {
     printf("\nusage:\n");
+    printf("     You must choose to run the program using one of the 4 modes below:\n");
+    printf("           -p Pipes, use unix pipes to transfer data from sender to receiver.\n");
+    printf("           -s Sockets, use TCP/IP (localhost) sockets to transfer from sender to receiver.\n");
+    printf("           -m Shared Memory.  Use shared memory to transfer from sender to receiver.  When \n");
+    printf("              testing throughput, you can specify the number of shared memory buffers(-c) to use.\n");
+    printf("              Having more buffers allows the sender and receiver to overlap memory accesses,\n");
+    printf("              but having two many buffers will cause L3 cache churn.\n");
+    printf("           -o Overhead, This is NOT a test of data transfer. Instead a single thread fills\n");
+    printf("              buffer_count (-c) buffers of size(-b) and then verifies the contents of the\n");
+    printf("              buffers.  It does this for (-t) seconds and then reports the throughput for\n");
+    printf("              the operation.  This gives an approximations of the cost for filling buffers.\n");
+    printf("              Since both fill and verify happen on a single thread, this is an over estimate\n");
+    printf("              of the throughput test case becuase those tests should use two cores.\n");
     printf("           \n");
-    printf("           \n");
-    printf("           \n");
-    printf("           \n");
+    printf("     The following options modify the behavior of the tests:\n");
+    printf("           -b (buffer_size) The buffer size used during the transfer.  This value must be a\n");
+    printf("              multiple of 8.  The default value is a 4096.\n");
+    printf("           -c (buffer_count) The shared memory throughput test and the Overhead test can use\n");
+    printf("              multiple buffers.  Multiple buffers give the shared memory tests better performance\n");
+    printf("              because the sender can be filling buffers while receiver is verifying the buffers.\n");
+    printf("              During the memory overhead test, more buffers usually cause the test to run slower\n");
+    printf("              because the processor caches get churned.\n");
+    printf("           -t (run_time), This how long the program runs to gather timing info.  \n");
+    printf("              When measuring latency, the run time is not used during sample collection,\n");
+    printf("              but it is still used to see if enough time has elapsed when computing the\n");
+    printf("              rdtsc ticks/second.  We this to convert out measurements from elapsed ticks\n");
+    printf("              back to seconds.  Even 1 second of elapsed time gets a good estimate of ticks\n");
+    printf("              per second (this value should be the same (or very close) to the CPU frequency\n");
+    printf("              found if /proc/cpuinfo)  Default run_time is 10 seconds.\n");
+    printf("           -l (sample_count), run a latency test instead of a throughput test.  This program\n");
+    printf("              defaults to running a throughput test, by using this flag you can run a latency\n");
+    printf("              test.  Specify the number of samples you would like to collect.  Note the we report\n");
+    printf("              percentiles up tp 99.9999%% so you should probably collect at least 1 million samples.\n");
+    printf("           -n No Fill/Verify of memory.  This program will write a monotonically increasing\n");
+    printf("              sequence of longs into each buffer before sending it to the receiver.  The \n");
+    printf("              receiver will verify the bytes received to ensure that it is receiving the correct\n");
+    printf("              data. This operation takes a non-trivia amount of time.  With this flag you can turn\n");
+    printf("              off this operation, and the memory transferred is whatever is in the buffers.\n");
+    printf("           -v Verbose, Print out a lot more information when running.  When verbose is turned\n");
+    printf("              off (the default) the program only prints the results on a single line.\n");
     printf("           \n");
     exit(-1);
 }
 
 
-
+/**
+ * read the value from the timestamp counter.
+ * @return an unsigned long read from the tsc.
+ */
 unsigned long get_rdtsc() {
     unsigned a, d;
     asm volatile("rdtsc" : "=a" (a), "=d" (d));
     return ((unsigned long)a) | (((unsigned long)d) << 32);
 }
 
+/**
+ * gets the realtime clock with nanosecond precision (if the system supports).
+ * Getting the time using this call is slower than getting the TSC value.
+ * So this is used only over longer durations.
+ * @param ts a point to the timespec to be filled.
+ */
 void get_time(struct timespec* ts) {
     int result = clock_gettime(CLOCK_REALTIME, ts);
     if(result < 0) exit_with_error("clock_gettime");
@@ -91,6 +136,15 @@ unsigned long elapsed_nanos(struct timespec* start, struct timespec* end) {
     return result;
 }
 
+/**
+ * calculates the nano per tick of the timestamp clock.
+ * Note to get an accurate measurement, at least run_time
+ * number of seconds must have elapsed.  That amount of
+ * time has not elapsed this function will sleep until
+ * the required time has passed.
+ * @param run_time the minimum time that must elapse to measure the time.
+ * @return the number of nanos per tick (inverse of the cpu frequency)
+ */
 double get_nanos_per_tick(long run_time) {
     while (1) {
         get_time(&stop_time);
@@ -104,7 +158,7 @@ double get_nanos_per_tick(long run_time) {
     long elapsed_tsc = stop_rdtsc - start_rdtsc;
     double nanos_per_tick = ((double) elapsed_nanos(&start_time, &stop_time)) / ((double) elapsed_tsc);
 
-    if(is_verbose) printf("cpu frequency: %f MHz\n", 1000.0/nanos_per_tick);
+    if(is_verbose) printf("nano per tick:%f -- cpu frequency: %f MHz\n", nanos_per_tick, 1000.0/nanos_per_tick);
     return nanos_per_tick;
 }
 
@@ -117,23 +171,39 @@ int cmp(const void* v1, const void* v2) {
     return 0;
 }
 
+
 void print_tp(int sample_count, long* samples, double npt, double tp) {
     double index_d= (sample_count * tp) / 100;
     int index = (int) index_d;
     if(index >= sample_count) index = sample_count - 1;
     double value = samples[ index];
-    printf("tp%f index:%d sample_count:%d value:%f, nanos:%f\n", tp, index, sample_count, value, value*npt);
+    if(is_verbose) {
+        printf("tp%f index:%d sample_count:%d value:%f, nanos:%f\n", tp, index, sample_count, value, value*npt);
+    } else {
+        printf(", %f", value*npt);
+    }
+}
+
+void print_average(int sample_count, long* samples, double npt) {
+    double sum = 0;
+    for(int i=0; i<sample_count; i++) sum += samples[i];
+    double average = sum / sample_count * npt;
+    if(is_verbose) {
+        printf("sample_count:%d average: %f\n", sample_count, average);
+    } else {
+        printf("%f", average);
+    }
 }
 
 void report_latency( int sample_count, long* samples, int run_time) {
     qsort(samples, sample_count, sizeof(long), &cmp);
     double npt = get_nanos_per_tick(run_time);
-    printf("get_nanos_per_tick: %f\n", npt);
-    if(is_verbose) {
+     if(is_verbose) {
         for(int i=0; i<sample_count; i++) {
-            printf("%ld\n", samples[i]);
+            printf("sample: %d, %ld\n", i, samples[i]);
         }
     }
+    print_average(sample_count, samples, npt);
     print_tp(sample_count, samples, npt, 0);
     print_tp(sample_count, samples, npt, 10);
     print_tp(sample_count, samples, npt, 50);
@@ -143,6 +213,7 @@ void report_latency( int sample_count, long* samples, int run_time) {
     print_tp(sample_count, samples, npt, 99.99);
     print_tp(sample_count, samples, npt, 99.999);
     print_tp(sample_count, samples, npt, 100);
+    printf("\n");
 
 }
 
@@ -150,12 +221,16 @@ void report_latency( int sample_count, long* samples, int run_time) {
 void report_throughput( long bytes_sent, long elapsed, int runtime) {
     double npt = get_nanos_per_tick(runtime);
 
-    printf("get_nanos_per_tick: %f\n", npt);
+    if(is_verbose) printf("get_nanos_per_tick: %f\n", npt);
     double elapsed_seconds = ((double)elapsed) * npt / ONE_BILLION;
-    printf("elapsed ticks: %ld seconds:%f\n", elapsed, elapsed_seconds);
+    if(is_verbose)  printf("elapsed ticks: %ld seconds:%f\n", elapsed, elapsed_seconds);
     double throughput = ((double)bytes_sent) / elapsed_seconds;
     double gbps = throughput / 1024 /1024 /1024;
-    printf("bytes_sent: %ld, throughput(b/s):%f  %f(Gb/s)\n", bytes_sent, throughput, gbps);
+    if(is_verbose) {
+        printf("bytes_sent: %ld, throughput(b/s):%f  %f(Gb/s)\n", bytes_sent, throughput, gbps);
+    } else {
+        printf("%f\n", throughput);
+    }
 }
 
 /**
@@ -461,7 +536,7 @@ long throughput_sender_shm(shm_info_t* info, int run_time) {
 
 
 long throughput_receiver_fd(int fd, int buffer_size) {
-    printf("in throughput_receiver_fd -- buffer_size:%d\n", buffer_size);
+    if(is_verbose) printf("in throughput_receiver_fd -- buffer_size:%d\n", buffer_size);
 
     long bytes_read = 0;
     char* buffer = (char*) malloc(buffer_size);
@@ -582,8 +657,9 @@ long latency_sender_shm(shm_info_t* info, int sample_count, long* samples, int r
             if (head == tail) break;
         }
 
+        long end = get_rdtsc();
         long received = read_long(result_fd);
-        samples[index++] = received - started;
+        samples[index++] = end - started;
     }
 
     *done_ptr = head; // indicate to the receiver that this is all we are sending
@@ -762,6 +838,50 @@ void measure_shm_throughput(int buffer_size, int buffer_count, int run_time, int
     }
 }
 
+void measure_memory_overhead(int buffer_size, int block_count, int run_time) {
+    if (is_verbose) printf("in throughput_sender_fd -- buffer_size:%d, run_time:%d\n", buffer_size, run_time);
+
+    int loops_without_checking_time = 100;
+
+    void **buffers = malloc(block_count * sizeof(void *));
+    if (buffers == NULL) exit_with_error("malloc");
+
+    for (int i = 0; i < block_count; i++) {
+        buffers[i] = malloc(buffer_size);
+        if (buffers[i] == NULL) exit_with_error("malloc");
+    }
+
+    struct timespec started;
+    get_time(&started);
+    struct timespec now;
+
+    long end_nanos = run_time;
+    end_nanos *= ONE_BILLION;
+
+    long bytes_touched = 0;
+    long start  = get_rdtsc();
+
+    while (1) {
+        get_time(&now);
+        if (elapsed_nanos(&started, &now) > end_nanos) break;
+
+        for (int j = 0; j < loops_without_checking_time; j++) {
+            for (int i = 0; i < block_count; i++) {
+                fill(buffers[i], buffer_size);
+            }
+
+            for (int i = 0; i < block_count; i++) {
+                verify(buffers[i], buffer_size);
+            }
+
+            bytes_touched += ((long)buffer_size) * block_count;
+        }
+
+    }
+    long end = get_rdtsc();
+    report_throughput(bytes_touched, (end - start), run_time);
+}
+
 int main(int argc, char** argv) {
 
     get_time(&start_time);
@@ -770,6 +890,7 @@ int main(int argc, char** argv) {
     int is_pipe = 0;
     int is_shm = 0;
     int is_socket = 0;
+    int is_overhead = 0;
 
     // how much data do we transfer at a time?
     int buffer_size = 4096;
@@ -784,7 +905,7 @@ int main(int argc, char** argv) {
     int sample_count = -1;
 
     int c;
-    while ((c = getopt(argc, argv, "psmnvb:c:t:l:")) != -1) {
+    while ((c = getopt(argc, argv, "psmonvb:c:t:l:")) != -1) {
         switch (c) {
             case 'p':
                 is_pipe = 1;
@@ -794,6 +915,9 @@ int main(int argc, char** argv) {
                 break;
             case 'm':
                 is_shm = 1;
+                break;
+            case 'o':
+                is_overhead = 1;
                 break;
             case 'n':
                 is_fill = 0;
@@ -819,9 +943,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    int count = is_pipe + is_socket + is_shm;
+    int count = is_pipe + is_socket + is_shm+ is_overhead;
     if (count != 1) {
-        fprintf(stderr, "you must choose one of -p(pipe) -s(socket) -m(shared memory)\n");
+        fprintf(stderr, "you must choose one of -p(pipe) -s(socket) -m(shared memory) -o(overhead)\n");
         usage();
     }
 
@@ -830,11 +954,19 @@ int main(int argc, char** argv) {
         usage();
     }
 
+    if(buffer_size % 8 != 0) {
+        fprintf(stderr, "The buffer_size(%d) must be divisible by 8.\n", buffer_size);
+        usage();
+    }
+
     int result_fds[2];
     int result = pipe(result_fds);
     if (result < 0) exit_with_error("pipe");
 
-    if (is_shm) {
+    if(is_overhead) {
+        measure_memory_overhead(buffer_size, buffer_count, run_time);
+    }
+    else if (is_shm) {
         if (sample_count < 1) {
             measure_shm_throughput(buffer_size, buffer_count, run_time, result_fds);
         } else {
