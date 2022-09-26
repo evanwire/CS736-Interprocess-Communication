@@ -2,6 +2,7 @@
 #include<stdio.h>
 #include "./pipe.h"
 #include "./socket.h"
+#include "./shared_mem.h"
 
 int main(int argc, char* argv[]){
     //Parse args
@@ -22,5 +23,5 @@ int main(int argc, char* argv[]){
     // Run each experiment with these params
     run_experiment__s(count, size);
     run_experiment__p(count, size);
-
+    run_experiment__sm(count, size);
 }
