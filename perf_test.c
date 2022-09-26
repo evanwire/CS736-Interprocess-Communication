@@ -109,6 +109,7 @@ void usage() {
  */
 unsigned long get_rdtsc() {
     unsigned a, d;
+    asm volatile("lfence":::"memory");
     asm volatile("rdtsc" : "=a" (a), "=d" (d));
     return ((unsigned long)a) | (((unsigned long)d) << 32);
 }
@@ -657,9 +658,8 @@ long latency_sender_shm(shm_info_t* info, int sample_count, long* samples, int r
             if (head == tail) break;
         }
 
-        long end = get_rdtsc();
         long received = read_long(result_fd);
-        samples[index++] = end - started;
+        samples[index++] = received - started;
     }
 
     *done_ptr = head; // indicate to the receiver that this is all we are sending
