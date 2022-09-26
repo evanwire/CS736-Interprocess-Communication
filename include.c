@@ -51,13 +51,13 @@ void log_latency_results(Measurements *m, int count, int size) {
 }
 
 void log_throughput_results(Measurements *m, int count, int size) {
-    double min_tp = ((double) size) / (m->minimum / 1e6); // Milliseconds
-    double max_tp = ((double) size) / (m->maximum / 1e6); // Milliseconds
+    double min_tp = ((double) size) / (m->maximum / 1e6);
+    double max_tp = ((double) size) / (m->minimum / 1e6);
     double avg_tp = ((double) count * size) / (m->total_t / 1e6);
 
     printf("Results (Throughput): \n");
     printf("Total messages sent: %d\n", m->total_sent);
     printf("Minimum Throughput: %.3f in bytes/millisecond\n", min_tp);
-    printf("Minimum Throughput: %.3f in bytes/millisecond\n", max_tp);
+    printf("Maximum Throughput: %.3f in bytes/millisecond\n", max_tp);
     printf("Average Throughput: %.3f in bytes/millisecond\n", avg_tp);
 }
