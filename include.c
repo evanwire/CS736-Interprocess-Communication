@@ -12,6 +12,11 @@ unsigned long long get_now(){
     return ((double)clock()) / CLOCKS_PER_SEC * 1e9;
 }
 
+// void get_time(struct timespec* ts) {
+//     int result = clock_gettime(CLOCK_REALTIME, ts);
+//     if(result < 0) exit_with_error("clock_gettime");
+// }
+
 // Constructs a Measurements struct
 void init_measurements(Measurements* m){
     m->minimum = INT32_MAX;
