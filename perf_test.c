@@ -107,7 +107,7 @@ void usage() {
  * read the value from the timestamp counter.
  * @return an unsigned long read from the tsc.
  */
-unsigned long get_rdtsc() {
+static inline unsigned long get_rdtsc() {
     unsigned a, d;
     asm volatile("lfence":::"memory");
     asm volatile("rdtsc" : "=a" (a), "=d" (d));
