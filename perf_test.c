@@ -206,6 +206,7 @@ void report_latency( int sample_count, long* samples, int run_time) {
     }
     print_average(sample_count, samples, npt);
     print_tp(sample_count, samples, npt, 0);
+    print_tp(sample_count, samples, npt, 1);
     print_tp(sample_count, samples, npt, 10);
     print_tp(sample_count, samples, npt, 50);
     print_tp(sample_count, samples, npt, 90);
