@@ -1,134 +1,124 @@
-// References:
-// https://www.kernel.org/doc/gorman/html/understand/understand015.html
-// https://man7.org/linux/man-pages/man3/shm_open.3.html (shm_open man page)
-// https://man7.org/linux/man-pages/man2/mmap.2.html (mmap man page)
-// https://stackoverflow.com/questions/21311080/linux-shared-memory-shmget-vs-mmap
 
-#include <stdio.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <memory.h>
+#include<stdio.h>
+#include<stdlib.h>
 #include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <string.h>
 #include <sys/wait.h>
-
-#include "include.h"
-#include "shared_mem.h"
-
-#define SHM_FILE_PRIMARY_TO_SECONDARY "/736.shm_primary_to_secondary"
-#define SHM_FILE_SECONDARY_TO_PRIMARY "/736.shm_secondary_to_primary"
+#include <sys/shm.h>
+#include <stdio.h>
 
 
-typedef struct SharedMemoryMap {
-    char *prim_to_sec;
-    char *sec_to_prim;
-} SharedMemoryMap;
+#include "./include.h"
 
+#define STC 0x1234
+#define CTS 0x4321
 
-SharedMemoryMap memory_map_sm_file_descriptors(int fd_prim_to_sec, int fd_sec_to_prim, off_t mmap_size) {
-    char *sm_prim_to_sec = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_prim_to_sec, 0);
-    if (sm_prim_to_sec == MAP_FAILED) {
-        printf("Failed to map prim_to_sec memory");
-        exit(4);
-    }
-    char *sm_sec_to_prim = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_sec_to_prim, 0);
-    if (sm_sec_to_prim == MAP_FAILED) {
-        printf("Failed to map sec_to_prim memory");
-        munmap(sm_prim_to_sec, mmap_size);
-        exit(4);
-    }
-    SharedMemoryMap memoryMap = {.prim_to_sec = sm_prim_to_sec, .sec_to_prim = sm_sec_to_prim};
-    return memoryMap;
-}
+void client(int count, int size, int mode){
+    int stc_id = shmget(STC, size, IPC_CREAT | 0666);
+    if (stc_id < 0) {
+		perror("shmget");
+        exit(0);
+	}
+    char* stc_shm = (char*)shmat(stc_id, NULL, 0);
+    if (stc_shm < (char*)0) {
+		perror("shmat");
+        exit(0);
+	}
+    int cts_id = shmget(CTS, size, IPC_CREAT | 0666);
+    if (cts_id < 0) {
+		perror("shmget");
+        exit(0);
+	}
+    char* cts_shm = (char*)shmat(cts_id, NULL, 0);
+    if (cts_shm < (char*)0) {
+		perror("shmat");
+        exit(0);
+	}
 
-void run_secondary(int count, int size, int fd_prim_to_sec, int fd_sec_to_prim, off_t sm_size) {
-    SharedMemoryMap memoryMap = memory_map_sm_file_descriptors(fd_prim_to_sec, fd_sec_to_prim, sm_size);
-    char *sm_prim_to_sec = memoryMap.prim_to_sec;
-    char *sm_sec_to_prim = memoryMap.sec_to_prim;
-    char *buffer = malloc(sm_size);
-    off_t last_idx = sm_size - 1;
+    void* buff = malloc(size);
+    int return_msg_size = mode ? size : 1;
 
-    for (int itr = 1; itr <= count; itr++) {
-        while (sm_prim_to_sec[last_idx] != '0' + itr) {} // Waiting for primary to write
-        memcpy(buffer, sm_prim_to_sec, sm_size);
-        memset(sm_sec_to_prim, '0' + itr, size);
+    for(int i = 1; i <= count; i++){
+        while (stc_shm[size-1] != '0' + i) {}
+        memcpy(buff, stc_shm, size);
+        memset(cts_shm, '0' + i, return_msg_size);
     }
 
-    munmap(sm_prim_to_sec, sm_size);
-    munmap(sm_sec_to_prim, sm_size);
-    free(buffer);
-}
-
-Measurements *run_primary(int count, int size, int fd_prim_to_sec, int fd_sec_to_prim, off_t sm_size) {
-    SharedMemoryMap memoryMap = memory_map_sm_file_descriptors(fd_prim_to_sec, fd_sec_to_prim, sm_size);
-    char *sm_prim_to_sec = memoryMap.prim_to_sec;
-    char *sm_sec_to_prim = memoryMap.sec_to_prim;
-    char *buffer = malloc(sm_size);
-    off_t last_idx = sm_size - 1;
-
-    Measurements *measurements = malloc(sizeof(Measurements));
-    init_measurements(measurements);
-
-    for (int itr = 1; itr <= count; itr++) {
-        memset(sm_prim_to_sec, '0' + itr, size);
-        while (sm_sec_to_prim[last_idx] != '0' + itr) {} // Waiting for secondary to write
-        memcpy(buffer, sm_sec_to_prim, sm_size);
-        record(measurements);
+    free(buff);
+    if (shmdt(cts_shm) == -1) {
+        perror("shmdt");
+        exit(0);
     }
-
-    munmap(sm_prim_to_sec, sm_size);
-    munmap(sm_sec_to_prim, sm_size);
-    free(buffer);
-
-    return measurements;
-}
-
-void set_shared_mem_size(int sm_file_descriptor, off_t shared_mem_size) {
-    if (ftruncate(sm_file_descriptor, shared_mem_size) == -1) {
-        perror("failed to allocate memory");
-        shm_unlink(SHM_FILE_PRIMARY_TO_SECONDARY);
-        shm_unlink(SHM_FILE_SECONDARY_TO_PRIMARY);
-        exit(3);
+    if (shmdt(stc_shm) == -1) {
+        perror("shmdt");
+        exit(0);
     }
 }
 
-// We send count messages, size characters(bytes) long
-void run_experiment__sm(int count, int size) {
-    int fd_prim_to_sec = shm_open(SHM_FILE_PRIMARY_TO_SECONDARY, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
-    if (fd_prim_to_sec < 0) {
-        perror("failed to shm_open fd_prim_to_sec");
-    }
-    int fd_sec_to_prim = shm_open(SHM_FILE_SECONDARY_TO_PRIMARY, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
-    if (fd_sec_to_prim < 0) {
-        shm_unlink(SHM_FILE_PRIMARY_TO_SECONDARY);
-        perror("failed to shm_open sec_to_prim");
-        exit(2);
-    }
+void server(int count, int size, int mode){
+    int stc_id = shmget(STC, size, IPC_CREAT | 0666);
+    if (stc_id < 0) {
+		perror("shmget");
+        exit(0);
+	}
+    char* stc_shm = (char*)shmat(stc_id, NULL, 0);
+    if (stc_shm < (char*)0) {
+		perror("shmat");
+        exit(0);
+	}
+    int cts_id = shmget(CTS, size, IPC_CREAT | 0666);
+    if (cts_id < 0) {
+		perror("shmget");
+        exit(0);
+	}
+    char* cts_shm = (char*)shmat(cts_id, NULL, 0);
+    if (cts_shm < (char*)0) {
+		perror("shmat");
+        exit(0);
+	}
 
-    off_t shared_mem_size = (sizeof(char) * size);
-    set_shared_mem_size(fd_prim_to_sec, shared_mem_size);
-    set_shared_mem_size(fd_sec_to_prim, shared_mem_size);
+    int return_msg_size = mode ? size : 1;
+    void* buff = malloc(return_msg_size);
+    Measurements* m = malloc(sizeof(Measurements));
+    init_measurements(m);
+    
+    
+    for(int i = 1; i <= count; i++){
+        memset(stc_shm, '0' + i, size);      
+        while (cts_shm[return_msg_size-1] != '0' + i) {}
+        memcpy(buff, cts_shm, return_msg_size);
+        record(m);
+    }
+    record_end(m);
 
-    pid_t pid = fork();
-    if (pid == -1) {
+    mode ? log_l(m, count, size) : log_tp(m, count, size);
+    free(buff);
+    free(m);
+
+    if (shmdt(cts_shm) == -1) {
+        perror("shmdt");
+        exit(0);
+    }
+        if (shmdt(stc_shm) == -1) {
+        perror("shmdt");
+        exit(0);
+    }
+}
+
+void run_experiment__sm(int count, int size, int mode){
+    pid_t pid;
+    if((pid = fork()) == -1){
         perror("Fork");
     }
 
-    Measurements *measurements;
-    // Parent is primary, Child is secondary
-    if (pid != 0) {
-        measurements = run_primary(count, size, fd_prim_to_sec, fd_sec_to_prim, shared_mem_size);
+    // Parent is server, child is client
+    if(pid != 0){
+        server(count, size, mode);
         waitpid(pid, NULL, 0);
-
-    } else {
-        run_secondary(count, size, fd_prim_to_sec, fd_sec_to_prim, shared_mem_size);
+    }else{
+        client(count, size, mode);
         exit(0);
     }
-
-    shm_unlink(SHM_FILE_PRIMARY_TO_SECONDARY);
-    shm_unlink(SHM_FILE_SECONDARY_TO_PRIMARY);
-
-    log_results(measurements, count, size);
-    free(measurements);
 }

@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "include.h": "c"
+        "include.h": "c",
+        "shm.h": "c",
+        "stdlib.h": "c"
     }
 }

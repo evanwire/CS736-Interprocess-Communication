@@ -11,19 +11,20 @@
 
 
 // client hears from server, writes same message back
-void client_p(int s[2], int r[2], int count, int size, Measurements* m){
+void client_p(int s[2], int r[2], int count, int size, Measurements* m, int mode){
     //close unnessary fd's
     close(s[0]);
     close(r[1]);
 
     // init msg and buffer
-    char msg[size];
-    memset(msg, 'A', size);
+    int return_msg_size = mode ? size : 1;
+    char msg[return_msg_size];
+    memset(msg, 'A', return_msg_size);
     void* buff = malloc(size * sizeof(char));
    
     for(int i = 0; i < count; i++){
         read(r[0], buff, size * sizeof(char));
-        write(s[1], msg, size * sizeof(char));
+        write(s[1], msg, return_msg_size * sizeof(char));
     }
 
     // Close any other fds and free
@@ -33,7 +34,7 @@ void client_p(int s[2], int r[2], int count, int size, Measurements* m){
 }
 
 // Server sends msg to client, client sends an ack
-void server_p(int s[2], int r[2], int count, int size, Measurements* m){
+void server_p(int s[2], int r[2], int count, int size, Measurements* m, int mode){
     // Close unnesesary fd's
     close(s[0]);
     close(r[1]);
@@ -41,14 +42,17 @@ void server_p(int s[2], int r[2], int count, int size, Measurements* m){
     // init msg and buffer
     char msg[size];
     memset(msg, 'A', size);
-    void* buff = malloc(size * sizeof(char));
+    int return_msg_size = mode ? size : 1;
+    void* buff = malloc(return_msg_size * sizeof(char));
     
 
     for(int i = 0; i < count; i++){
         write(s[1], msg, size);
-        read(r[0], buff, size * sizeof(char));
+        read(r[0], buff, return_msg_size * sizeof(char));
         record(m);
     }
+    record_end(m);
+
 
     // Close any other fds and free
     close(s[1]);
@@ -57,7 +61,7 @@ void server_p(int s[2], int r[2], int count, int size, Measurements* m){
 }
 
 // We send count messages, size characters(bytes) long
-void run_experiment__p(int count, int size){
+void run_experiment__p(int count, int size, int mode){
     // Create pipes
     int server_send[2];
 
@@ -86,13 +90,13 @@ void run_experiment__p(int count, int size){
 
     // Parent is server, child is client
     if(pid != 0){
-        server_p(client_send, server_send, count, size, m);
+        server_p(client_send, server_send, count, size, m, mode);
         waitpid(pid, NULL, 0);
     }else{
-        client_p(server_send, client_send, count, size, m);
+        client_p(server_send, client_send, count, size, m, mode);
         exit(0);
     }
 
-    log_results(m, count, size);
+    mode ? log_l(m, count, size) : log_tp(m, count, size);
     free(m);
 }

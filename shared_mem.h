@@ -1,6 +1,6 @@
-#ifndef CS736_INTERPROCESS_COMMUNICATION_SHARED_MEM_H
-#define CS736_INTERPROCESS_COMMUNICATION_SHARED_MEM_H
+#ifndef SHM_H
+#define SHM_H
 
-void run_experiment__sm(int, int);
+void run_experiment__sm(int, int, int);
 
-#endif //CS736_INTERPROCESS_COMMUNICATION_SHARED_MEM_H
+#endif

@@ -1,17 +1,23 @@
 #ifndef INCLUDE_H
 #define INCLUDE_H
+#include <time.h>
 
 typedef struct Measurements{
-    unsigned long long start;
-    unsigned long long minimum;
-    unsigned long long maximum;
-    unsigned long long total_t;
-    unsigned long long total_sent;
+    long minimum;
+    long maximum;
+    long long total_t;
+    struct timespec start_t;
+    struct timespec end_t;
+    struct timespec exp_start;
+    struct timespec exp_end;
+    int total_sent;
 } Measurements;
 
-unsigned long long get_now();
+void get_now(struct timespec*);
 void init_measurements(Measurements*);
 void record(Measurements*);
-void log_results(Measurements*, int, int);
+void record_end(Measurements*);
+void log_l(Measurements*, int, int);
+void log_tp(Measurements*, int, int);
 
 #endif

@@ -14,8 +14,8 @@
 
 #include "./include.h"
 
-#define PORT 6000
-
+#define SOCK_L 6000
+#define SOCK_TP 6001
 
 int server_fd;
 int client_fd;
@@ -34,7 +34,7 @@ void close_fds(){
     close(client_fd);
 }
 
-void client_s(int count, int size){
+void client_s(int count, int size, int mode){
     int sock = 0;
     struct sockaddr_in server_addr;
     if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0){
@@ -45,7 +45,7 @@ void client_s(int count, int size){
 
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
+    server_addr.sin_port = htons(mode ? SOCK_L : SOCK_TP);
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     if((client_fd = connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr))) < 0){
@@ -54,13 +54,14 @@ void client_s(int count, int size){
         exit(0);
     }
 
-    char msg[size];
-    memset(msg, 'A', size);
+    int response_size = mode ? size : 1;
+    char msg[response_size];
+    memset(msg, 'A', response_size);
     void* buff = malloc(size * sizeof(char));
 
     for(int i = 0; i < count; i++){
         read(sock, buff, size);
-        if(write(sock, msg, size) == -1){
+        if(write(sock, msg, response_size) == -1){
             perror("send");
             close_fds();
             exit(0);
@@ -69,12 +70,12 @@ void client_s(int count, int size){
     free(buff);
 }
 
-void server_s(int count, int size){
+void server_s(int count, int size, int mode){
     struct sockaddr_in address;
     memset(&address, 0, sizeof(address));
 
     address.sin_family = AF_INET;
-    address.sin_port = htons(PORT);
+    address.sin_port = htons(mode ? SOCK_L : SOCK_TP);
     address.sin_addr.s_addr = htonl(INADDR_ANY);
 
     
@@ -112,7 +113,8 @@ void server_s(int count, int size){
     // Begin transmit
     char msg[size];
     memset(msg, 'A', size);
-    void* buff = malloc(size * sizeof(char));
+    int response_size = mode ? size : 1;
+    void* buff = malloc(response_size * sizeof(char));
     m = malloc(sizeof(Measurements));
     init_measurements(m); // Do this here so socket setup doesn't affect time
     for(int i = 0; i < count; i++){
@@ -121,14 +123,15 @@ void server_s(int count, int size){
             close_fds();
             exit(0);
         }
-        read(connection_fd, buff, size);
+        read(connection_fd, buff, response_size);
         record(m);
     }
+    record_end(m);
     free(buff);
 
 }
 
-void run_experiment__s(int count, int size){
+void run_experiment__s(int count, int size, int mode){
 
     pid_t pid;
     if((pid = fork()) == -1){
@@ -137,14 +140,14 @@ void run_experiment__s(int count, int size){
 
     // Parent is server, child is client
     if(pid != 0){
-        server_s(count, size);
+        server_s(count, size, mode);
         waitpid(pid, NULL, 0);
     }else{
-        client_s(count, size);
+        client_s(count, size, mode);
         exit(0);
     }
 
-    log_results(m, count, size);
+    mode ? log_l(m, count, size) : log_tp(m, count, size);
     free(m);
     close_fds();
 

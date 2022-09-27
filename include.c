@@ -2,38 +2,45 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <sys/time.h>
+#include <stdlib.h>
+//#include <sys/time.h>
 #include <time.h>
+//#define _POSIX_C_SOURCE 199309L
 
 #include "./include.h"
 
 // TODO: Investigate other time measurement methods
-unsigned long long get_now(){
-    return ((double)clock()) / CLOCKS_PER_SEC * 1e9;
+void get_now(struct timespec* ts) {
+    int result = clock_gettime(CLOCK_REALTIME, ts);
+    if(result < 0) {
+        perror("clock_gettime");
+        exit(0);
+    }
 }
-
-// void get_time(struct timespec* ts) {
-//     int result = clock_gettime(CLOCK_REALTIME, ts);
-//     if(result < 0) exit_with_error("clock_gettime");
-// }
 
 // Constructs a Measurements struct
 void init_measurements(Measurements* m){
     m->minimum = INT32_MAX;
     m->maximum = 0;
-    m->start = get_now();
     m->total_sent = 0;
     m->total_t = 0;
+    get_now(&m->start_t);
+    get_now(&m->exp_start);
 }
 
-// Records necessary measurements, called after a successful transmit
-void record(Measurements* m){
-    unsigned long long t = get_now() - m->start;
+void record_end(Measurements *m){
+    get_now(&m->exp_end);
+}
 
-    if(t < m->minimum){
+void record(Measurements *m) {
+    get_now(&m->end_t);
+    long t = (m->end_t.tv_sec - m->start_t.tv_sec) * 1e9;
+    t +=  (m->end_t.tv_nsec - m->start_t.tv_nsec);
+
+    if (t < m->minimum) {
         m->minimum = t;
     }
-    if(t > m->maximum){
+    if (t > m->maximum) {
         m->maximum = t;
     }
 
@@ -44,15 +51,24 @@ void record(Measurements* m){
 // TODO: Check my unit conversions
 // TODO: Standard deviation of message send times
 // TODO: Do we want send rate? (size * bytes) / second?
-void log_results(Measurements* m, int count, int size){
-    double tp = ((double)count * size) / (m->total_t / 1e6); // Milliseconds
-    double avg_latency = (m->minimum + m->maximum) / 4; //divide by 2 for average, and 2 for latency which is 1/2 rtt
+void log_l(Measurements* m, int count, int size){
+    double avg_latency = ((double) m->total_t / (1000 * m->total_sent)) / 2.0; // divide by 2 for latency, don't need the return transmission
 
-    printf("Results: \n");
-    printf("Total messages sent: %llu\n", m->total_sent);
-    printf("Average Latency: %.3f nano seconds\n", avg_latency / 1000.0);
-    printf("Minimum send time: %.3f nano seconds\n", m->minimum / 1000.0);
-    printf("Maximum send time: %.3f nano seconds\n", m->maximum / 1000.0);
-    printf("Throughput: %.3f in bytes/millisecond\n", tp);
+    printf("Results (Latency): \n");
+    printf("Total messages sent: %d\n", m->total_sent);
+    printf("Minimum RTT send time: %.3f micro seconds\n", (double) m->minimum / 1000);
+    printf("Maximum RTT send time: %.3f micro seconds\n", (double) m->maximum / 1000);
+    printf("Average RTT Latency: %.3f micro seconds\n", avg_latency);
+}
 
+void log_tp(Measurements* m, int count, int size){
+    double min_tp = ((double) size) / (m->maximum / 1e6);
+    double max_tp = ((double) size) / (m->minimum / 1e6);
+    double avg_tp = ((double) count * size) / (m->total_t / 1e6);
+
+    printf("Results (Throughput): \n");
+    printf("Total messages sent: %d\n", m->total_sent);
+    printf("Minimum Throughput: %.3f in bytes/millisecond\n", min_tp);
+    printf("Maximum Throughput: %.3f in bytes/millisecond\n", max_tp);
+    printf("Average Throughput: %.3f in bytes/millisecond\n", avg_tp);
 }
