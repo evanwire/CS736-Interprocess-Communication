@@ -29,8 +29,7 @@ void record_start(Measurements *m) {
 
 void record_end(Measurements *m) {
     get_time(&m->time_e);
-    long elapsed_t = (m->time_e.tv_sec - m->time_s.tv_sec) * 1e9;
-    elapsed_t +=  (m->time_e.tv_nsec - m->time_s.tv_nsec);
+    long elapsed_t = ((m->time_e.tv_sec - m->time_s.tv_sec) * 1e9) + (m->time_e.tv_nsec - m->time_s.tv_nsec);
 
     if (elapsed_t < m->minimum) {
         m->minimum = elapsed_t;
@@ -39,18 +38,19 @@ void record_end(Measurements *m) {
         m->maximum = elapsed_t;
     }
 
+    // printf("%ld ", elapsed_t);
     m->total_t += elapsed_t;
     m->total_sent++;
 }
 
 void log_latency_results(Measurements *m) {
-    double avg_latency = ((double) m->total_t / (1000 * m->total_sent));
+    double avg_latency = ((double) m->total_t / m->total_sent);
 
     printf("Results (Latency): \n");
     printf("Total messages sent: %d\n", m->total_sent);
-    printf("Minimum RTT send time: %.3f micro seconds\n", (double) m->minimum / 1000);
-    printf("Maximum RTT send time: %.3f micro seconds\n", (double) m->maximum / 1000);
-    printf("Average RTT Latency: %.3f micro seconds\n", avg_latency);
+    printf("Minimum RTT send time: %ld nano seconds\n", m->minimum);
+    printf("Maximum RTT send time: %ld nano seconds\n", m->maximum);
+    printf("Average RTT Latency: %.3f nano seconds\n", avg_latency);
 }
 
 void log_throughput_results(Measurements *m, int count, int size) {

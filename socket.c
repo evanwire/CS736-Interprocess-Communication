@@ -56,7 +56,7 @@ void run_client(int count, int port, size_t read_io_size, size_t write_io_size) 
         while(1) {
             int result = read(client_fd, &(read_buffer[offset]), read_io_size - offset);
             if(result == 0) {break;}
-            if(result < 0) {perror("read failed"); return;}
+            if(result < 0) {perror("read failed"); exit(5);}
             offset += result;
         }
         for (int i = 0; i <= read_io_size-1; i++) {
@@ -124,7 +124,7 @@ Measurements *run_server(int count, int port, size_t read_io_size, size_t write_
         while(1) {
             int result = read(client_fd, &(read_buffer[offset]), read_io_size - offset);
             if(result == 0) {break;}
-            if(result < 0) {perror("read failed"); return measurements;}
+            if(result < 0) {perror("read failed"); exit(5);}
             offset += result;
         }
         for (int i = 0; i <= read_io_size-1; i++) {
