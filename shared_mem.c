@@ -9,12 +9,12 @@
 #include <stdlib.h>
 #include <memory.h>
 #include <unistd.h>
-#include <assert.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
 
-#include "measurement.h"
+#include "common.h"
 #include "shared_mem.h"
+#include "measurement.h"
 
 
 typedef struct SharedMemoryMap {
@@ -22,12 +22,6 @@ typedef struct SharedMemoryMap {
     char *sec_to_prim;
 } SharedMemoryMap;
 
-
-void fill_shared_mem(volatile char *buffer, size_t size, char value) {
-    for (int i = 0; i < size; i++) {
-        buffer[i] = value;
-    }
-}
 
 void run_secondary(int count, size_t read_io_size, size_t write_io_size, SharedMemoryMap sharedMemoryMap) {
     volatile char *sm_prim_to_sec = sharedMemoryMap.prim_to_sec;
@@ -38,11 +32,11 @@ void run_secondary(int count, size_t read_io_size, size_t write_io_size, SharedM
 
     for (int itr = 0; itr < count; itr++) {
         expected_char = (char) ((itr + 65) % 122);
+
         while (sm_prim_to_sec[last_read_idx] != expected_char) {} // Waiting for primary to write
-        for (int i = 0; i <= last_read_idx; i++) {
-            assert(sm_prim_to_sec[i] == expected_char);
-        }
-        fill_shared_mem(sm_sec_to_prim, write_io_size, expected_char);
+        v_verify(sm_prim_to_sec, expected_char, read_io_size);
+
+        v_fill(sm_sec_to_prim, expected_char, write_io_size);
     }
 }
 
@@ -56,16 +50,20 @@ Measurements *run_primary(int count, size_t read_io_size, size_t write_io_size, 
     char expected_char;
     size_t last_read_idx = read_io_size - 1;
     for (int itr = 0; itr < count; itr++) {
+//        print_progress(itr, count);
         record_start(measurements);
+
         expected_char = (char) ((itr + 65) % 122);
-        fill_shared_mem(sm_prim_to_sec, write_io_size, expected_char);
+
+        v_fill(sm_prim_to_sec, expected_char, write_io_size);
+
         while (sm_sec_to_prim[last_read_idx] != expected_char) {} // Waiting for secondary to write
-        for (int i = 0; i <= last_read_idx; i++) {
-            assert(sm_sec_to_prim[i] == expected_char);
-        }
+        v_verify(sm_sec_to_prim, expected_char, read_io_size);
+
         record_end(measurements);
     }
 
+//    printf("\n");
     return measurements;
 }
 

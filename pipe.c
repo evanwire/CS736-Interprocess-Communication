@@ -3,90 +3,12 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <memory.h>
-#include <assert.h>
 #include <sys/wait.h>
 
 #include "pipe.h"
+#include "common.h"
 #include "measurement.h"
 
-
-void run_pipe_secondary(int count, size_t read_io_size, size_t write_io_size,
-                        const int fd_primary_to_secondary[2], const int fd_secondary_to_primary[2]) {
-
-    close(fd_secondary_to_primary[0]);
-    int fd_w_secondary = fd_secondary_to_primary[1];
-    int fd_r_primary = fd_primary_to_secondary[0];
-    close(fd_primary_to_secondary[1]);
-    char *read_buffer = malloc(read_io_size);
-    char *write_buffer = malloc(write_io_size);
-
-    for (int itr = 0; itr < count; itr++) {
-        char expected_char = (char)((itr+65) % 122);
-        int offset = 0;
-        while(1) {
-            int result = read(fd_r_primary, &(read_buffer[offset]), read_io_size - offset);
-            if(result == 0) {break;}
-            if(result < 0) {perror("read failed"); exit(5);}
-            offset += result;
-        }
-        for (int i = 0; i <= read_io_size-1; i++) {
-            assert(read_buffer[i] == expected_char);
-        }
-
-        memset(write_buffer, expected_char, write_io_size);
-        if(write(fd_w_secondary, write_buffer, write_io_size) < 0) {
-            perror("write failed\n");
-            break;
-        }
-    }
-
-    close(fd_secondary_to_primary[1]);
-    close(fd_primary_to_secondary[0]);
-
-    free(read_buffer);
-    free(write_buffer);
-}
-
-Measurements *run_pipe_primary(int count, size_t read_io_size, size_t write_io_size,
-                               const int fd_primary_to_secondary[2], const int fd_secondary_to_primary[2]) {
-
-    close(fd_primary_to_secondary[0]);
-    int fd_w_primary = fd_primary_to_secondary[1];
-    int fd_r_secondary = fd_secondary_to_primary[0];
-    close(fd_secondary_to_primary[1]);
-
-    Measurements *measurements = malloc(sizeof(Measurements));
-    init_measurements(measurements);
-
-    char *read_buffer = malloc(read_io_size);
-    char *write_buffer = malloc(write_io_size);
-
-    for (int itr = 0; itr < count; itr++) {
-        record_start(measurements);
-        char expected_char = (char)((itr+65) % 122);
-        memset(write_buffer, expected_char, write_io_size);
-
-        if(write(fd_w_primary, write_buffer, write_io_size) < 0) {
-            perror("write failed\n");
-            break;
-        }
-        int offset = 0;
-        while(1) {
-            int result = read(fd_r_secondary, &(read_buffer[offset]), read_io_size - offset);
-            if(result == 0) {break;}
-            if(result < 0) {perror("read failed"); exit(5);}
-            offset += result;
-        }
-        for (int i = 0; i <= read_io_size-1; i++) {
-            assert(read_buffer[i] == expected_char);
-        }
-        record_end(measurements);
-    }
-
-    close(fd_primary_to_secondary[1]);
-    close(fd_secondary_to_primary[0]);
-    return measurements;
-}
 
 Measurements *run_pipe(int count, size_t message_io_size, size_t ack_io_size) {
     int pipefd_primary_to_secondary[2];
@@ -107,16 +29,23 @@ Measurements *run_pipe(int count, size_t message_io_size, size_t ack_io_size) {
         perror("Fork");
     }
 
-    Measurements *measurements;
     // Parent is primary, Child is secondary
+    Measurements *measurements;
     if (pid != 0) {
-        measurements = run_pipe_primary(count, ack_io_size, message_io_size, pipefd_primary_to_secondary, pipefd_secondary_to_primary);
+        measurements = run_fd_primary(count, ack_io_size, message_io_size, pipefd_primary_to_secondary[1],
+                                      pipefd_secondary_to_primary[0]);
         waitpid(pid, NULL, 0);
 
     } else {
-        run_pipe_secondary(count, message_io_size, ack_io_size, pipefd_primary_to_secondary, pipefd_secondary_to_primary);
+        run_fd_secondary(count, message_io_size, ack_io_size, pipefd_primary_to_secondary[0],
+                         pipefd_secondary_to_primary[1]);
         exit(0);
     }
+
+    close(pipefd_primary_to_secondary[0]);
+    close(pipefd_primary_to_secondary[1]);
+    close(pipefd_secondary_to_primary[0]);
+    close(pipefd_secondary_to_primary[1]);
 
     return measurements;
 }
