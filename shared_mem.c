@@ -13,17 +13,15 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 
-#include "include.h"
+#include "measurement.h"
 #include "shared_mem.h"
-
-#define SHM_FILE_PRIMARY_TO_SECONDARY "/736.shm_primary_to_secondary"
-#define SHM_FILE_SECONDARY_TO_PRIMARY "/736.shm_secondary_to_primary"
 
 
 typedef struct SharedMemoryMap {
     char *prim_to_sec;
     char *sec_to_prim;
 } SharedMemoryMap;
+
 
 void fill_shared_mem(volatile char *buffer, size_t size, char value) {
     for (int i = 0; i < size; i++) {
@@ -71,15 +69,6 @@ Measurements *run_primary(int count, size_t read_io_size, size_t write_io_size, 
     return measurements;
 }
 
-//void set_shared_mem_size(int sm_file_descriptor, off_t shared_mem_size) {
-//    if (ftruncate(sm_file_descriptor, shared_mem_size) == -1) {
-//        perror("failed to allocate memory");
-//        shm_unlink(SHM_FILE_PRIMARY_TO_SECONDARY);
-//        shm_unlink(SHM_FILE_SECONDARY_TO_PRIMARY);
-//        exit(3);
-//    }
-//}
-
 SharedMemoryMap memory_map_sm_file_descriptors(off_t message_io_size, off_t ack_io_size) {
     // Map Anonymous eliminates the need for using shm_open or opening a file in /dev/shm
     char *sm_prim_to_sec = mmap(NULL, message_io_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -98,20 +87,6 @@ SharedMemoryMap memory_map_sm_file_descriptors(off_t message_io_size, off_t ack_
 }
 
 Measurements *run_shared_mem(int count, size_t message_io_size, size_t ack_io_size) {
-//    int fd_prim_to_sec = shm_open(SHM_FILE_PRIMARY_TO_SECONDARY, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
-//    if (fd_prim_to_sec < 0) {
-//        perror("failed to shm_open fd_prim_to_sec");
-//    }
-//    int fd_sec_to_prim = shm_open(SHM_FILE_SECONDARY_TO_PRIMARY, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
-//    if (fd_sec_to_prim < 0) {
-//        shm_unlink(SHM_FILE_PRIMARY_TO_SECONDARY);
-//        perror("failed to shm_open sec_to_prim");
-//        exit(2);
-//    }
-
-//    off_t shared_mem_size = (sizeof(char) * size);
-//    set_shared_mem_size(fd_prim_to_sec, (off_t) message_io_size);
-//    set_shared_mem_size(fd_sec_to_prim, (off_t) ack_io_size);
     SharedMemoryMap sharedMemoryMap = memory_map_sm_file_descriptors((off_t) message_io_size, (off_t) ack_io_size);
 
     pid_t pid = fork();
@@ -132,8 +107,6 @@ Measurements *run_shared_mem(int count, size_t message_io_size, size_t ack_io_si
 
     munmap(sharedMemoryMap.prim_to_sec, message_io_size);
     munmap(sharedMemoryMap.sec_to_prim, ack_io_size);
-//    shm_unlink(SHM_FILE_PRIMARY_TO_SECONDARY);
-//    shm_unlink(SHM_FILE_SECONDARY_TO_PRIMARY);
 
     return measurements;
 }
@@ -142,7 +115,7 @@ void run_shared_mem_latency(int count, int size) {
     size_t io_size = (size * sizeof(char));
 
     Measurements *measurements = run_shared_mem(count, io_size, io_size);
-    log_latency_results(measurements, count, size);
+    log_latency_results(measurements);
     free(measurements);
 }
 

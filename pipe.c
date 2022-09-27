@@ -3,10 +3,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <memory.h>
+#include <assert.h>
 #include <sys/wait.h>
 
 #include "pipe.h"
-#include "include.h"
+#include "measurement.h"
 
 
 void run_pipe_secondary(int count, size_t read_io_size, size_t write_io_size,
@@ -20,11 +21,19 @@ void run_pipe_secondary(int count, size_t read_io_size, size_t write_io_size,
     char *write_buffer = malloc(write_io_size);
 
     for (int itr = 0; itr < count; itr++) {
-        if(read(fd_r_primary, read_buffer, read_io_size) < 0) {
-            perror("read failed\n");
-            break;
+        char expected_char = (char)((itr+65) % 122);
+        int offset = 0;
+        while(1) {
+            int result = read(fd_r_primary, &(read_buffer[offset]), read_io_size - offset);
+            if(result == 0) {break;}
+            if(result < 0) {perror("read failed"); return;}
+            offset += result;
         }
-        memset(write_buffer, ((itr+65) % 122), write_io_size);
+        for (int i = 0; i <= read_io_size-1; i++) {
+            assert(read_buffer[i] == expected_char);
+        }
+
+        memset(write_buffer, expected_char, write_io_size);
         if(write(fd_w_secondary, write_buffer, write_io_size) < 0) {
             perror("write failed\n");
             break;
@@ -53,15 +62,23 @@ Measurements *run_pipe_primary(int count, size_t read_io_size, size_t write_io_s
     char *write_buffer = malloc(write_io_size);
 
     for (int itr = 0; itr < count; itr++) {
-        memset(write_buffer, ((itr+65) % 122), write_io_size);
         record_start(measurements);
+        char expected_char = (char)((itr+65) % 122);
+        memset(write_buffer, expected_char, write_io_size);
+
         if(write(fd_w_primary, write_buffer, write_io_size) < 0) {
             perror("write failed\n");
             break;
         }
-        if(read(fd_r_secondary, read_buffer, read_io_size) < 0) {
-            perror("read failed\n");
-            break;
+        int offset = 0;
+        while(1) {
+            int result = read(fd_r_secondary, &(read_buffer[offset]), read_io_size - offset);
+            if(result == 0) {break;}
+            if(result < 0) {perror("read failed"); return measurements;}
+            offset += result;
+        }
+        for (int i = 0; i <= read_io_size-1; i++) {
+            assert(read_buffer[i] == expected_char);
         }
         record_end(measurements);
     }
@@ -108,7 +125,7 @@ void run_pipe_latency(int count, int size) {
     size_t io_size = (size * sizeof(char));
 
     Measurements *measurements = run_pipe(count, io_size, io_size);
-    log_latency_results(measurements, count, size);
+    log_latency_results(measurements);
     free(measurements);
 }
 

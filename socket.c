@@ -2,6 +2,7 @@
 // https://opensource.com/article/19/4/interprocess-communication-linux-networking
 
 #include <stdio.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/un.h>
@@ -13,11 +14,10 @@
 #include <netinet/tcp.h>
 
 #include "socket.h"
-#include "include.h"
+#include "measurement.h"
 
-#define PORT_LATENCY 9006
-#define PORT_THROUGHPUT 9007
-#define MAX_QUEUED_REQUESTS 100
+#define PORT 9006
+#define MAX_QUEUED_REQUESTS 10
 
 void run_client(int count, int port, size_t read_io_size, size_t write_io_size) {
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -44,14 +44,23 @@ void run_client(int count, int port, size_t read_io_size, size_t write_io_size) 
     char *write_buffer = malloc(write_io_size);
 
     for (int itr = 0; itr < count; itr++) {
-        memset(write_buffer, ((itr+65) % 122), write_io_size);
+        char expected_char = (char)((itr+65) % 122);
+        memset(write_buffer, expected_char, write_io_size);
+
         if(write(client_fd, write_buffer, write_io_size) < 0) {
-            perror("write failed\n");
+            perror("write failed");
             break;
         }
-        if(read(client_fd, read_buffer, read_io_size) < 0) {
-            perror("read failed\n");
-            break;
+
+        int offset = 0;
+        while(1) {
+            int result = read(client_fd, &(read_buffer[offset]), read_io_size - offset);
+            if(result == 0) {break;}
+            if(result < 0) {perror("read failed"); return;}
+            offset += result;
+        }
+        for (int i = 0; i <= read_io_size-1; i++) {
+            assert(read_buffer[i] == expected_char);
         }
     }
     close(client_fd);
@@ -109,14 +118,24 @@ Measurements *run_server(int count, int port, size_t read_io_size, size_t write_
 
     for (int itr = 0; itr < count; itr++) {
         record_start(measurements);
-        memset(write_buffer, ((itr+65) % 122), write_io_size);
-        if(read(client_fd, read_buffer, read_io_size) < 0) {
-            perror("read failed\n");
-            break;
+        char expected_char = (char)((itr+65) % 122);
+
+        int offset = 0;
+        while(1) {
+            int result = read(client_fd, &(read_buffer[offset]), read_io_size - offset);
+            if(result == 0) {break;}
+            if(result < 0) {perror("read failed"); return measurements;}
+            offset += result;
         }
+        for (int i = 0; i <= read_io_size-1; i++) {
+            assert(read_buffer[i] == expected_char);
+        }
+
+        memset(write_buffer, expected_char, write_io_size);
         if(write(client_fd, write_buffer, write_io_size) < 0) {
-            perror("write failed\n");
+            perror("write failed");
         }
+
         record_end(measurements);
     }
     close(client_fd);
@@ -130,7 +149,7 @@ Measurements *run_server(int count, int port, size_t read_io_size, size_t write_
 Measurements * run_socket(int count, int port, size_t message_io_size, size_t ack_io_size) {
     pid_t pid = fork();
     if (pid == -1) {
-        perror("Fork\n");
+        perror("Fork");
     }
 
     Measurements *measurements;
@@ -150,8 +169,8 @@ Measurements * run_socket(int count, int port, size_t message_io_size, size_t ac
 void run_socket_latency(int count, int size) {
     size_t io_size = (size * sizeof(char));
 
-    Measurements *measurements = run_socket(count, PORT_LATENCY, io_size, io_size);
-    log_latency_results(measurements, count, size);
+    Measurements *measurements = run_socket(count, PORT, io_size, io_size);
+    log_latency_results(measurements);
     free(measurements);
 }
 
@@ -159,7 +178,7 @@ void run_socket_bandwidth(int count, int size) {
     size_t message_io_size = (size * sizeof(char));
     size_t ack_size = 1;
 
-    Measurements *measurements = run_socket(count, PORT_THROUGHPUT, message_io_size, ack_size);
+    Measurements *measurements = run_socket(count, PORT, message_io_size, ack_size);
     log_throughput_results(measurements, count, size);
     free(measurements);
 }
