@@ -17,7 +17,7 @@
 
 #define PORT_LATENCY 9006
 #define PORT_THROUGHPUT 9007
-#define MAX_QUEUED_REQUESTS 1
+#define MAX_QUEUED_REQUESTS 100
 
 void run_client(int count, int port, size_t read_io_size, size_t write_io_size) {
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
